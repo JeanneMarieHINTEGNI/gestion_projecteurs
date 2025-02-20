@@ -3,6 +3,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const dotenv = require('dotenv');
+dotenv.config();
 const connection = require('./db');
 
 dotenv.config();
@@ -23,14 +24,17 @@ app.post('/register', async (req, res) => {
 app.post('/login', (req, res) => {
     const { email, password } = req.body;
     connection.query('SELECT * FROM users WHERE email = ?', [email], async (err, results) => {
-        if (err) return res.status(500).json({ error: err.message });
+        if (err) {
+            console.error(err); // Ajouter la journalisation d'erreurs
+            return res.status(500).json({ error: err.message });
+        }
         if (results.length === 0) return res.status(404).json({ message: 'Utilisateur non trouvé!' });
 
         const user = results[0];
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(401).json({ message: 'Mot de passe incorrect!' });
 
-        const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET);
+        const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET);
         res.json({ token });
     });
 });
@@ -38,10 +42,10 @@ app.post('/login', (req, res) => {
 // Middleware d'authentification
 const authenticateJWT = (req, res, next) => {
     const token = req.headers['authorization']?.split(' ')[1];
-    if (!token) return res.sendStatus(403);
+    if (!token) return res.sendStatus(403); // Pas de token, accès refusé
 
     jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-        if (err) return res.sendStatus(403);
+        if (err) return res.sendStatus(403); // Token invalide, accès refusé
         req.user = user;
         next();
     });
@@ -57,6 +61,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Le serveur écoute sur le port ${PORT}`);
 });
+
 // Ajouter un projecteur
 app.post('/projectors', authenticateJWT, (req, res) => {
     const { name } = req.body;
@@ -67,7 +72,7 @@ app.post('/projectors', authenticateJWT, (req, res) => {
 });
 
 // Lister les projecteurs
-app.get('/projectors', (req, res) => {
+app.get('/projectors', authenticateJWT, (req, res) => {
     connection.query('SELECT * FROM projectors', (err, results) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(results);
@@ -92,6 +97,7 @@ app.delete('/projectors/:id', authenticateJWT, (req, res) => {
         res.json({ message: 'Projecteur supprimé!' });
     });
 });
+
 // Réserver un projecteur
 app.post('/reservations', authenticateJWT, (req, res) => {
     const { projectorId, startTime, endTime } = req.body;
@@ -118,3 +124,4 @@ app.delete('/reservations/:id', authenticateJWT, (req, res) => {
         res.json({ message: 'Réservation annulée!' });
     });
 });
+console.log('Clé secrète JWT:', process.env.JWT_SECRET); // Ajoutez cette ligne pour le débogage
